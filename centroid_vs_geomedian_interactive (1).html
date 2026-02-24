@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Centroid vs Geometric Median Explorer</title>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet"/>
+<style>
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  background: #f0f4f8;
+  color: #1f2937;
+}
+header {
+  padding: 1rem 2rem;
+  background: #2563eb;
+  color: white;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.container {
+  display: flex;
+  height: calc(100vh - 80px);
+}
+#map {
+  flex: 2;
+  height: 100%;
+}
+.panel {
+  flex: 1;
+  padding: 1rem;
+  overflow-y: auto;
+  background: white;
+  border-left: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.card {
+  background: #f9fafb;
+  padding: 1rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+button {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 0.6rem 1rem;
+  border-radius: 10px;
+  cursor: pointer;
+  margin: 0.3rem 0;
+  width: 100%;
+  font-size: 1rem;
+  transition: 0.2s;
+}
+button:hover { background: #1e40af; }
+h3 {
+  margin-top: 0;
+}
+.highlight { font-weight: bold; color: #2563eb; }
+small { color: #6b7280; }
+ul { padding-left: 1.2rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📍 Centroid vs Geometric Median Explorer</h1>
+  <p>Click on the map to add points and see the difference in "center" locations!</p>
+</header>
+<div class="container">
+  <div id="map"></div>
+  <div class="panel">
+    <div class="card">
+      <h3>Controls</h3>
+      <button onclick="clearPoints()">Clear All Points</button>
+      <p><small>Blue = Centroid | Red = Geometric Median</small></p>
+    </div>
+    <div class="card">
+      <h3>Centers Explained</h3>
+      <p><span class="highlight">Centroid:</span> Average of coordinates. Quick to compute but can be skewed by outliers.</p>
+      <p><span class="highlight">Geometric Median:</span> Minimizes total distance to all points. More robust to outliers.</p>
+    </div>
+    <div class="card">
+      <h3>Distance Concepts</h3>
+      <p><span class="highlight">Haversine Distance:</span> Straight-line distance over Earth's surface.</p>
+      <p><span class="highlight">Driving Distance:</span> Real-world travel distance along roads (requires API).</p>
+      <p><small>This demo uses Haversine distance only.</small></p>
+    </div>
+    <div class="card">
+      <h3>Use Cases</h3>
+      <ul>
+        <li>Warehouse or facility placement</li>
+        <li>Emergency service hub planning</li>
+        <li>Delivery route optimization</li>
+        <li>School or service districting</li>
+        <li>Ride-share or taxi driver positioning</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Tips for Use</h3>
+      <ul>
+        <li>Click multiple points to simulate real locations.</li>
+        <li>Use "Clear All Points" to restart the experiment.</li>
+        <li>Hover over markers for labels.</li>
+        <li>Zoom and pan to explore your points.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<script>
+var map = L.map('map').setView([39.1031, -84.5120], 11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+let points = [];
+let markers = [];
+let centroidMarker, medianMarker;
+
+map.on('click', function(e) {
+  let latlng = e.latlng;
+  points.push([latlng.lat, latlng.lng]);
+  let marker = L.marker(latlng).addTo(map);
+  markers.push(marker);
+  updateCenters();
+});
+
+function clearPoints() {
+  points = [];
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+  if (centroidMarker) map.removeLayer(centroidMarker);
+  if (medianMarker) map.removeLayer(medianMarker);
+}
+
+function updateCenters() {
+  if (points.length === 0) return;
+  if (centroidMarker) map.removeLayer(centroidMarker);
+  if (medianMarker) map.removeLayer(medianMarker);
+
+  let centroid = computeCentroid(points);
+  let median = computeGeometricMedian(points);
+
+  centroidMarker = L.circleMarker(centroid, {color:'blue', radius:10, fillOpacity:0.8}).addTo(map).bindPopup("Centroid");
+  medianMarker = L.circleMarker(median, {color:'red', radius:10, fillOpacity:0.8}).addTo(map).bindPopup("Geometric Median");
+}
+
+function computeCentroid(points) {
+  let sumLat = 0, sumLng = 0;
+  points.forEach(p => { sumLat += p[0]; sumLng += p[1]; });
+  return [sumLat/points.length, sumLng/points.length];
+}
+
+function computeGeometricMedian(points) {
+  let guess = computeCentroid(points);
+  for (let i = 0; i < 50; i++) {
+    let numLat = 0, numLng = 0, denom = 0;
+    points.forEach(p => {
+      let d = haversine(guess, p);
+      if (d === 0) return;
+      numLat += p[0]/d;
+      numLng += p[1]/d;
+      denom += 1/d;
+    });
+    guess = [numLat/denom, numLng/denom];
+  }
+  return guess;
+}
+
+function haversine(p1, p2) {
+  const R = 6371;
+  let dLat = (p2[0]-p1[0]) * Math.PI/180;
+  let dLng = (p2[1]-p1[1]) * Math.PI/180;
+  let a = Math.sin(dLat/2)**2 + Math.cos(p1[0]*Math.PI/180) * Math.cos(p2[0]*Math.PI/180) * Math.sin(dLng/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+</script>
+</body>
+</html>
